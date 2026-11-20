@@ -12,7 +12,7 @@
 **Alternativas descartadas.**
 
 - **Express:** ecosistema enorme, pero sin validación ni tipado nativos. Habría que ensamblar framework, validador y logger, y ese trabajo no aporta al dominio.
-- **NestJS:** modelo de módulos e inyección de dependencias, muy demandado en empresas. Se descarta *por ahora*, y no por una falla técnica: añade capas (decoradores, DI) a un proyecto de un solo desarrollador que primero quiere entender lo que hay debajo.
+- **NestJS:** modelo de módulos e inyección de dependencias, muy demandado en empresas. Se descarta _por ahora_, y no por una falla técnica: añade capas (decoradores, DI) a un proyecto de un solo desarrollador que primero quiere entender lo que hay debajo.
 
 **Consecuencias.**
 

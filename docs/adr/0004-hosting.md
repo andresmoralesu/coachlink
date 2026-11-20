@@ -4,11 +4,9 @@
 - Fecha: 2026-11-20 (reemplaza la propuesta del 2026-11-18, que elegía Render de pago)
 - Evidencia: sección "Evidencia" al final de este archivo (precios y límites con fecha; se actualiza sin tocar la decisión)
 
-**Decisión: la API corre en un servicio web gratuito de Render (con Docker) y Postgres en el plan gratuito de Neon, con ambos en la misma región (Ohio o Virginia). El auto-deploy de Render se configura en "After CI Checks Pass", de modo que el CI manda sobre el hosting. Se pasa a un plan de pago cuando se cumpla uno de los umbrales de "qué me haría cambiar de opinión".**
+**Decisión: la API corre en un servicio web gratuito de Render, empaquetada en Docker para mantener la portabilidad, y Postgres en el plan gratuito de Neon, ambos en Ohio (us-east-2 en Neon). El auto-deploy de Render se configura en "After CI Checks Pass", de modo que el CI manda sobre el hosting. Se pasa a un plan de pago cuando se cumpla uno de los umbrales de "qué me haría cambiar de opinión".**
 
 **Contexto.** Proyecto personal sin ingresos: mientras se desarrolla, el costo debe ser lo más cercano a $0. La versión anterior de este ADR descartaba el plan gratuito con la premisa "la API no puede dormirse". Esa premisa era demasiado fuerte: el cliente es offline-first, guarda las operaciones en una cola local y sincroniza en segundo plano con reintentos, así que un arranque en frío es tolerable si el cliente se diseña para ello, y diseñarlo así es parte de lo que el proyecto quiere demostrar. Lo que sí hay que cuidar son los costos ocultos del plan gratuito, que están en las consecuencias. Los números de este ADR (15 minutos, 6 horas, 100 CU-hours, 1 GB, precios) salen de la sección Evidencia al final de este archivo, consultada el 2026-11-19 y el 2026-11-20; cambian seguido, así que reconfirma antes de aceptar.
-
-**Decisión.** Render gratis para la API y Neon gratis para Postgres, con la API en Docker para mantener la portabilidad y las dos piezas en regiones equivalentes (Ohio con us-east-2, o Virginia con us-east-1; verifica el mapeo de Virginia).
 
 **Despliegue: quién manda.** El auto-deploy de Render queda en After CI Checks Pass: despliega solo si pasan los checks de GitHub Actions, así que el CI manda. Dos cuidados: un commit sin checks no se despliega (es lo esperado), y como un check omitido cuenta como pasado, el workflow que ejecuta los tests no debe saltarse por filtros de rutas del monorepo (ADR-0005). La alternativa, el deploy hook desde Actions, da más control y fija el orden de forma explícita; se adopta si el orden de la prueba posterior al deploy resulta enredado (ver abajo).
 
@@ -21,14 +19,15 @@
 
 Sin el sondeo del paso 2, la prueba consultaría la versión anterior, que está sana, y daría un falso verde. Además hay un riesgo de bloqueo: si Render contara ese workflow entre los checks que espera, Render esperaría al workflow y el workflow esperaría a Render. No lo verifiqué; la prueba 6 de la fase 0 lo comprueba, y si resulta enredado ese es el motivo para pasar al deploy hook.
 
+Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, pero una fuente de terceros indica que exigen un plan de pago de Render; no lo verifiqué y el sondeo del paso 2 no los necesita.
+
 **Alternativas descartadas.**
 
 - **Render de pago desde el primer día** (servicio Starter y Postgres Basic-256mb, unos $13 al mes según Render): evita el arranque en frío, pero cuesta antes de tener usuarios. Queda reservado para los umbrales.
 - **Postgres gratuito de Render:** expira a los 30 días.
 - **Deploy hook desde GitHub Actions desde el inicio:** más control, pero más piezas que mantener antes de necesitarlas.
-- **Webhooks de Render (`deploy_ended`) para disparar la prueba:** existen, pero una fuente de terceros indica que exigen un plan de pago de Render; no lo verifiqué y el sondeo del paso 2 no los necesita.
 - **Fly.io:** no tiene plan gratuito y su Postgres administrado empieza en $38 al mes; tiene región en São Paulo, igual que Neon, y sería el camino si la latencia desde Colombia llega a ser el problema.
-- **Railway:** no la reevalué; sigue siendo una opción barata, con backups y recuperación por comprobar.
+- **Railway:** descartada porque, según fuentes secundarias que no verifiqué, no tiene un plan gratuito permanente, y el objetivo mientras se desarrolla es $0.
 
 **Consecuencias.**
 
@@ -54,8 +53,9 @@ Sin el sondeo del paso 2, la prueba consultaría la versión anterior, que está
 
 1. Desplegar un `Dockerfile` en Render gratis con la base en Neon, con auto-deploy en After CI Checks Pass, un `/health` que devuelva `version` y no consulte la base, y un `/ready` que sí la consulte.
 2. Probar la compuerta: empujar un commit con un test roto. Éxito: Render no despliega.
-3. Publicar a propósito una versión rota (500 en `/health`). Éxito: el health check impide que salga, la versión anterior sigue sirviendo y la prueba posterior agota su tiempo máximo y falla.
-4. Segundo escenario: una versión con `/health` en 200 pero `DATABASE_URL` inválida. Éxito: pasa el health check y queda en vivo (esto documenta el límite del mecanismo), y la prueba posterior sondea hasta que `version` coincide, llama a `/ready`, falla y GitHub te notifica.
+3. Versión que falla al arrancar, provocada desde Render y no desde el código (un commit que rompa `/health` pone el CI en rojo y Render no despliega; eso ya lo prueba la prueba 2): quitar una variable de entorno requerida. Éxito: la configuración falla al arrancar, el contenedor se cae, falla el health check, la versión anterior sigue sirviendo y, tras empujar un commit trivial, la prueba posterior agota su tiempo máximo y falla.
+4. Segundo escenario: poner un `DATABASE_URL` con formato válido pero con la contraseña mala (con formato inválido la configuración fallaría al arrancar y caería en el caso 3). Éxito: `/health` responde 200, pasa el health check y queda en vivo (esto documenta el límite del mecanismo); tras empujar un commit trivial, la prueba posterior sondea hasta que `version` coincide, llama a `/ready`, falla y GitHub te notifica.
+   - En las pruebas 3 y 4, anota qué hace Render al guardar la variable: si redespliega, ese deploy tampoco pasa por el CI. Al terminar, restaura la variable correcta.
 5. Hacer rollback desde la página Events. Éxito: la versión anterior vuelve en menos de 5 minutos (umbral inicial), con el tiempo anotado aquí, y reactivas el auto-deploy. Si el plan gratuito no permite el rollback, paga un solo mes de Starter solo para esta prueba.
 6. Comprobar que la prueba posterior no se bloquea ni da un falso verde. Éxito: con el workflow aparte, Render despliega mientras corre y no queda esperándolo; y con un commit de arranque lento, la prueba espera a que `version` coincida antes de llamar a `/ready`.
 

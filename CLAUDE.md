@@ -4,7 +4,7 @@ Plataforma de entrenadores y clientes para registrar entrenamientos, offline-fir
 
 ## Comandos
 
-- `pnpm install`: instala dependencias (Node 22, pnpm 10.28).
+- `pnpm install`: instala dependencias (Node 24, pnpm 10.28).
 - `pnpm dev`: levanta la API en local.
 - `pnpm check`: typecheck, lint y tests. Ejecútalo siempre antes de `git push`.
 

@@ -7,7 +7,7 @@
 
 **Contexto.** La API necesita validar entradas y, sobre todo, la salida de la IA, que no es confiable y debe pasar por un esquema antes de guardarse. También necesita tipado de punta a punta y logs estructurados para depurar la sincronización offline. El desarrollador es uno solo y quiere dominar los fundamentos (ciclo de petición, plugins, hooks) antes que apoyarse en abstracciones.
 
-**Decisión.** Fastify con validación por esquema (TypeBox o Zod, a decidir en un ADR menor) y logs con pino, que viene incluido. `noUncheckedIndexedAccess` hace que `arr[i]` sea `T | undefined`, lo que obliga a manejar listas vacías de ejercicios. Runtime: la versión LTS vigente de Node; por verificar, porque según mi información Node 22 deja de recibir soporte en abril de 2027 y conviene comparar con la LTS activa antes de fijarla.
+**Decisión.** Runtime: Node 24, fijado en engines, @types/node y el CI. Se descartó Node 22 porque ya está en Maintenance LTS y su fin de vida es el 30 de abril de 2027; Node 26 entra en LTS en octubre de 2026 y se reevaluará en 2027, cuando tenga más historial. Verificado el 2026-11-23: estado en [nodejs.org](https://nodejs.org/en/about/previous-releases) y fechas de fin de vida en [NodeSource](https://nodesource.com/blog/nodejs-versions-lts-eol-outdated-release-risks)
 
 **Alternativas descartadas.**
 

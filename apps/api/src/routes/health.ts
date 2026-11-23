@@ -7,9 +7,11 @@ import type { FastifyPluginAsync } from "fastify";
  * a Neon. La comprobación de dependencias irá en /ready.
  */
 export const healthRoutes: FastifyPluginAsync<{ version: string }> = async (app, options) => {
+  async function ping(): Promise<void> {}
   app.get("/health", async () => {
     // Tipado con el contrato: si cambia el esquema en contracts, esto deja de compilar.
     const body: HealthResponse = { status: "ok", version: options.version };
+    ping();
     return body;
   });
 };

@@ -26,3 +26,5 @@
 - Necesitas un plugin que solo existe para ESLint.
 
 **Verificación.** Introducir a propósito una promesa sin `await` en un handler. Éxito: el CI rechaza el cambio por esa regla, y `biome check` sobre el repo termina en menos de 2 s en local.
+
+Actualización 2026-11-23: `docs/` queda fuera de Biome porque el formateo de tablas Markdown ensancha las líneas y ensucia el historial.

@@ -12,7 +12,7 @@
 **Alternativas descartadas.**
 
 - **npm workspaces:** ya lo conoces, pero instala más lento y es más permisivo con dependencias no declaradas, que se pueden importar sin estar en el `package.json` del paquete.
-- **Yarn:** sin ventaja clara para este caso.
+- **Yarn:** misma categoría que npm y pnpm; no se evaluó a fondo porque pnpm ya cubría el aislamiento de dependencias.
 - **Varios repositorios:** obliga a publicar y versionar `contracts` entre repos; con un solo desarrollador es fricción sin beneficio.
 
 **Consecuencias.**
@@ -20,11 +20,22 @@
 - Instalaciones rápidas y error inmediato si importas algo que no declaraste.
 - Un cambio en `contracts` se ve en `api` y `web` dentro del mismo PR.
 - pnpm es menos común que npm en algunos equipos.
-- Desplegar la API desde un monorepo en Render exige indicar el directorio y el comando de build; compruébalo en su documentación.
+- La API se despliega con Docker (ADR-0004): el contexto de build debe ser la raíz del repo para poder copiar `contracts` junto a `api`.
 
 **Qué me haría cambiar de opinión.**
 
-- Render (o el hosting elegido) no soporta pnpm bien.
+- Construir la imagen de `api` desde la raíz tarda más de 5 minutos en el CI o la imagen pesa más de 500 MB sin poder reducirla.
+- El CI supera los 5 minutos por tareas repetidas entre paquetes: se evalúa Turborepo o Nx (con tres paquetes, `pnpm -r` basta).
 - `web` y `api` necesitan ciclos de release independientes.
 
-**Verificación.** Que `api` importe un tipo desde `contracts`. Éxito: cambiar un campo en `contracts` rompe el chequeo de tipos de `api` y `web` en CI, importar una dependencia no declarada falla, y Render construye `api` con pnpm desde la raíz del repo.
+**Verificación.**
+
+Hecha el 2026-11-23:
+
+- Cambiar un campo en `contracts` rompe el typecheck de `api` (probado en local con un campo `uptime` obligatorio).
+- Importar `fastify` desde `contracts`, que no lo declara, falla con `TS2307` en `pnpm typecheck`.
+
+Pendiente:
+
+- Fase 0: `docker build` desde la raíz produce la imagen de `api` y arranca (criterio C4 de la spec 001).
+- Cuando exista `web`: el mismo cambio de contrato rompe también su typecheck en el CI.

@@ -11,7 +11,7 @@
 
 **Alternativas descartadas.**
 
-- **Jest:** el más extendido y con mucha documentación. Se descarta porque, según mi conocimiento, TypeScript y ESM requieren configuración extra; verifica el estado actual antes de aceptar este ADR.
+- **Jest:** el más extendido y con mucha documentación. Se descarta porque Vitest ya funciona con TypeScript y ESM sin configuración adicional (verificado en el esqueleto, con 6 tests en el CI); no se evaluó a fondo la configuración actual de Jest.
 - **`node:test` (runner nativo de Node):** cero dependencias, pero con menos herramientas de mocking, cobertura y modo watch listas para usar.
 
 **Consecuencias.**
@@ -20,11 +20,16 @@
 - Migrar a Jest, si hiciera falta, es sencillo por la API compatible.
 - Ecosistema más joven: algún paquete de mocking asumirá Jest.
 - Tendrás dos runners (Vitest y Playwright), cada uno con su propósito.
+- Vitest transpila sin comprobar tipos: los errores de tipos los detecta `pnpm typecheck` en el CI, no los tests.
 
 **Qué me haría cambiar de opinión.**
 
-- Vitest resulta inestable o lento en CI con la suite real.
+- La suite supera 60 segundos en el CI, o un test intermitente se atribuye al runner (umbral inicial).
 - Heredas o integras código que ya depende de Jest.
 - Necesitas una función que solo ofrece Jest.
 
-**Verificación.** Escribir primero, en rojo, los tests de la función de rotación semanal y luego hacerlos pasar. Éxito: `vitest run` termina en menos de 10 s en local con 30 tests unitarios, y CI publica el reporte de cobertura (umbral inicial a decidir).
+**Verificación.**
+
+Hecha el 2026-11-23: `vitest run` ejecuta 6 tests en TypeScript y ESM, en local y en el CI (Node 24), sin configuración adicional y en cerca de 1,2 s.
+
+Pendiente (fase 3): los tests de la función de rotación semanal, escritos primero en rojo. Éxito: `vitest run` termina en menos de 10 s con 30 tests unitarios, y el CI publica el reporte de cobertura (umbral inicial a decidir).

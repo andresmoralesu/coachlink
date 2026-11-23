@@ -27,4 +27,6 @@
 
 **Verificación.** Introducir a propósito una promesa sin `await` en un handler. Éxito: el CI rechaza el cambio por esa regla, y `biome check` sobre el repo termina en menos de 2 s en local.
 
+Verificado el 2026-11-23: una llamada a una función `async` sin `await` en el handler de `/health` hace fallar `pnpm lint` y el check `verify` del PR por `lint/nursery/noFloatingPromises`; `biome check` revisa 19 archivos en unos 230 ms. Como la regla está en `nursery`, repite este ejercicio cada vez que subas la versión de Biome.
+
 Actualización 2026-11-23: `docs/` queda fuera de Biome porque el formateo de tablas Markdown ensancha las líneas y ensucia el historial.

@@ -29,7 +29,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
-            - name: Construir la imagen de producción
+      - name: Construir la imagen de producción
         run: docker build -t coachlink-api:ci .
       - name: Comprobar que la imagen responde /health
         run: |

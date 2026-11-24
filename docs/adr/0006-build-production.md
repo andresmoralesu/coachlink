@@ -1,6 +1,6 @@
 # ADR-0006: Build de producción: compilar con tsc a JavaScript
 
-- **Estado:** propuesto
+- **Estado:** aceptado
 - **Fecha:** 2026-11-24
 
 ## Contexto
@@ -61,3 +61,26 @@ Cada punto se ejecuta tras implementar B y se compara con la línea base de arri
 
 - ADR-0005: añadir la frase sobre cómo se copian los `contracts` a la imagen, cuando se defina el método.
 - Criterio C4 de la spec 001 queda cubierto por los puntos 3, 4 y 7.
+
+## Resultado de la implementación
+
+Decisiones que la sección Decisión dejaba abiertas y se tomaron al implementar:
+
+- `dev` y `test` resuelven `contracts` con la condición de exportación `development`, que apunta a `src`. `tsx` la recibe con `--conditions=development` y Vitest la activa por defecto. Producción usa la condición `default`, que apunta a `dist`. Se resolvió en aproximadamente una hora, dentro del límite de 3 horas.
+- La imagen se arma en dos etapas con `pnpm deploy --prod --legacy` y se ejecuta como usuario `node`. No se usó `inject-workspace-packages` para no cambiar cómo instala pnpm en todo el monorepo.
+- `files: ["dist"]` es obligatorio en `api` y `contracts`: `pnpm deploy` respeta `.gitignore` y dejaría `dist` fuera de la imagen.
+- `sourceMap: true` va en `tsconfig.base.json`: sin los `.map`, `--enable-source-maps` no tiene efecto.
+
+## Resultados de la verificación
+
+Medidas locales (Docker Desktop, WSL2, caché caliente); el CI repite la comprobación funcional.
+
+| # | Verificación | Resultado |
+|---|---|---|
+| 1 | `pnpm -r build` genera `dist` en ambos paquetes | Cumple |
+| 2 | `pnpm typecheck` con `NodeNext` | Cumple, también en el CI |
+| 3 | Tamaño en disco menor que la línea base | 357 MB frente a 850 MB (−58 %) |
+| 4 | `docker run` hasta `/health`, mediana de 3 | 787 ms (1245, 773, 787) frente a 1469 ms; umbral 2469 ms |
+| 5 | La imagen no contiene `tsx` | Cumple, en local y en el CI |
+| 6 | Source maps | Sin el flag el stack apunta a `dist/server.js:26`; con el flag, a `src/server.ts:27` |
+| 7 | CI construye la imagen y comprueba `/health` | En verde con la imagen correcta; en rojo con un `CMD` roto a propósito, con los logs del contenedor visibles |

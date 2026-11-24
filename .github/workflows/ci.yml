@@ -29,3 +29,19 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm lint
       - run: pnpm test
+      - name: Construir la imagen de producción
+        run: docker build -t coachlink-api:ci .
+      - name: Comprobar que la imagen responde /health
+        run: |
+          docker run -d --name api -p 3000:3000 coachlink-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:3000/health | grep -q '"status":"ok"'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "La imagen no respondió /health en 30 s" >&2
+          docker logs api
+          exit 1
+      - name: Comprobar que la imagen no incluye tsx
+        run: docker run --rm --entrypoint sh coachlink-api:ci -c 'test ! -e node_modules/.bin/tsx'

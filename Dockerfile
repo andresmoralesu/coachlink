@@ -23,4 +23,4 @@ COPY --from=build /prod/api ./
 USER node
 EXPOSE 3000
 
-CMD ["node", "--enable-source-maps", "dist/server.js"]
+CMD ["node", "--enable-source-maps", "dist/no-existe.js"]

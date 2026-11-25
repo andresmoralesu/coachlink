@@ -1,3 +1,4 @@
+// prueba de disparo de despliegue
 import Fastify, { type FastifyInstance } from "fastify";
 import type { Config } from "./config.js";
 import type { Database } from "./database.js";

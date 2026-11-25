@@ -3,7 +3,11 @@ import { afterAll, describe, expect, it } from "vitest";
 import { buildApp } from "../src/app.js";
 
 describe("GET /health", () => {
-  const app = buildApp({ logLevel: "silent", version: "abc1234" });
+  const app = buildApp({
+    logLevel: "silent",
+    version: "abc1234",
+    database: { ping: () => Promise.resolve() },
+  });
   afterAll(() => app.close());
 
   it("responde 200 con status ok y la versión desplegada", async () => {

@@ -1,14 +1,19 @@
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { createDatabase } from "./database.js";
 
 const config = loadConfig();
-const app = buildApp(config);
+const database = createDatabase(config.databaseUrl, (error) => {
+  app.log.error({ err: error }, "error en el pool de la base de datos");
+});
+const app = buildApp({ ...config, database });
 
 // Cierre ordenado: Render envía SIGTERM al reemplazar o detener el servicio.
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, "apagando");
   try {
     await app.close();
+    await database.close();
     process.exit(0);
   } catch (error) {
     app.log.error(error);

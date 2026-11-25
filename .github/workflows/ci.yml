@@ -33,8 +33,8 @@ jobs:
         run: docker build -t coachlink-api:ci .
       - name: Comprobar que la imagen responde /health
         run: |
-          docker run -d --name api -p 3000:3000 coachlink-api:ci
-          for i in $(seq 1 30); do
+          docker run -d --name api -p 3000:3000 -e DATABASE_URL=postgres://ci:ci@localhost:5432/ci coachlink-api:ci
+          for _ in $(seq 1 30); do
             if curl -fsS http://localhost:3000/health | grep -q '"status":"ok"'; then
               exit 0
             fi

@@ -8,7 +8,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "dev": "tsx watch --conditions=development --env-file-if-exists=.env src/server.ts",
+    "dev": "tsx watch --conditions=development --env-file-if-exists=../../.env src/server.ts",
     "start": "node --enable-source-maps dist/server.js",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run"
@@ -16,9 +16,11 @@
   "dependencies": {
     "@coachlink/contracts": "workspace:*",
     "fastify": "^5.12.8",
+    "pg": "^8.23.1",
     "zod": "^4.6.7"
   },
   "devDependencies": {
+    "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
     "vitest": "^5.1.1"
   }

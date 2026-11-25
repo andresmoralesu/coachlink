@@ -1,0 +1,60 @@
+name: Smoke
+
+# Prueba posterior al despliegue (ADR-0004). Se dispara al terminar CI en main.
+# Render despliega solo si CI pasa; este workflow espera a que la versión nueva
+# esté en producción y comprueba /health y /ready. No hace checkout ni usa secretos.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Si llegan dos commits seguidos, Render solo despliega el último: el sondeo del
+# primero nunca vería su SHA. Se cancela el anterior.
+concurrency:
+  group: smoke-main
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      BASE_URL: ${{ vars.PRODUCTION_URL }}
+      EXPECTED_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - name: Comprobar la configuración
+        run: |
+          if [ -z "$BASE_URL" ]; then
+            echo "Falta la variable del repositorio PRODUCTION_URL" >&2
+            exit 1
+          fi
+      - name: Esperar a que /health reporte la versión desplegada
+        run: |
+          fin=$((SECONDS + 900))
+          while [ "$SECONDS" -lt "$fin" ]; do
+            version=$(curl -fsS --max-time 90 "$BASE_URL/health" | jq -r '.version' || true)
+            echo "versión en producción: ${version:-sin respuesta} (esperada: $EXPECTED_SHA)"
+            if [ "$version" = "$EXPECTED_SHA" ]; then
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "La versión $EXPECTED_SHA no llegó a producción en 15 minutos" >&2
+          exit 1
+      - name: Comprobar /ready
+        run: |
+          for intento in 1 2 3 4 5; do
+            if curl -fsS --max-time 30 "$BASE_URL/ready" | jq -e '.status == "ready"'; then
+              exit 0
+            fi
+            echo "intento $intento: /ready aún no responde ready"
+            sleep 10
+          done
+          echo "/ready no respondió ready" >&2
+          exit 1

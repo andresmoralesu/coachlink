@@ -5,6 +5,8 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   HOST: z.string().min(1).default("0.0.0.0"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  // Cadena de conexión a Postgres (Neon). Es un secreto: nunca va en logs ni en mensajes de error.
+  DATABASE_URL: z.url({ protocol: /^postgres(ql)?$/ }),
   // SHA del commit desplegado. Render lo inyecta como RENDER_GIT_COMMIT.
   RENDER_GIT_COMMIT: z.string().min(1).optional(),
   GIT_SHA: z.string().min(1).optional(),
@@ -15,6 +17,7 @@ export interface Config {
   port: number;
   host: string;
   logLevel: "fatal" | "error" | "warn" | "info" | "debug" | "trace" | "silent";
+  databaseUrl: string;
   version: string;
 }
 
@@ -36,6 +39,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     port: e.PORT,
     host: e.HOST,
     logLevel: e.LOG_LEVEL,
+    databaseUrl: e.DATABASE_URL,
     version: e.RENDER_GIT_COMMIT ?? e.GIT_SHA ?? "dev",
   };
 }

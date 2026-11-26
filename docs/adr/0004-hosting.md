@@ -1,14 +1,14 @@
 # ADR-0004: Hosting — Render (API) + Neon (Postgres), ambos en plan gratuito
 
-- Estado: propuesto (pasa a aceptado cuando estén anotados los tiempos de la verificación de la fase 0)
-- Fecha: 2026-11-20 (reemplaza la propuesta del 2026-11-18, que elegía Render de pago)
+- Estado: propuesto (la verificación de la fase 0 está hecha salvo la prueba 3 y el arranque en frío repetido; ver "Resultados de la verificación"; pasa a aceptado al cerrarlas)
+- Fecha: 2026-11-20 (reemplaza la propuesta del 2026-11-18, que elegía Render de pago); enmendado el 2026-11-26 con los resultados medidos
 - Evidencia: sección "Evidencia" al final de este archivo (precios y límites con fecha; se actualiza sin tocar la decisión)
 
-**Decisión: la API corre en un servicio web gratuito de Render, empaquetada en Docker para mantener la portabilidad, y Postgres en el plan gratuito de Neon, ambos en Ohio (us-east-2 en Neon). El auto-deploy de Render se configura en "After CI Checks Pass", de modo que el CI manda sobre el hosting. Se pasa a un plan de pago cuando se cumpla uno de los umbrales de "qué me haría cambiar de opinión".**
+**Decisión: la API corre en un servicio web gratuito de Render, empaquetada en Docker para mantener la portabilidad, y Postgres en el plan gratuito de Neon, ambos en Ohio (us-east-2 en Neon). El auto-deploy de Render se configura en "On Commit" (con "After CI Checks Pass" se midió un bloqueo con la prueba posterior); la compuerta es el PR con `verify` obligatorio y una prueba posterior verifica producción. Se pasa a un plan de pago cuando se cumpla uno de los umbrales de "qué me haría cambiar de opinión".**
 
 **Contexto.** Proyecto personal sin ingresos: mientras se desarrolla, el costo debe ser lo más cercano a $0. La versión anterior de este ADR descartaba el plan gratuito con la premisa "la API no puede dormirse". Esa premisa era demasiado fuerte: el cliente es offline-first, guarda las operaciones en una cola local y sincroniza en segundo plano con reintentos, así que un arranque en frío es tolerable si el cliente se diseña para ello, y diseñarlo así es parte de lo que el proyecto quiere demostrar. Lo que sí hay que cuidar son los costos ocultos del plan gratuito, que están en las consecuencias. Los números de este ADR (15 minutos, 6 horas, 100 CU-hours, 1 GB, precios) salen de la sección Evidencia al final de este archivo, consultada el 2026-11-19 y el 2026-11-20; cambian seguido, así que reconfirma antes de aceptar.
 
-**Despliegue: quién manda.** El auto-deploy de Render queda en After CI Checks Pass: despliega solo si pasan los checks de GitHub Actions, así que el CI manda. Dos cuidados: un commit sin checks no se despliega (es lo esperado), y como un check omitido cuenta como pasado, el workflow que ejecuta los tests no debe saltarse por filtros de rutas del monorepo (ADR-0005). La alternativa, el deploy hook desde Actions, da más control y fija el orden de forma explícita; se adopta si el orden de la prueba posterior al deploy resulta enredado (ver abajo).
+**Despliegue: quién manda.** El auto-deploy de Render queda en On Commit: despliega al llegar el commit a `main`, sin esperar al CI. La compuerta real es el PR: `main` está protegido, exige el check `verify` y solo admite squash merge, así que a `main` solo llega código que ya pasó el CI. Se probó primero After CI Checks Pass y se descartó: Render esperó a todos los checks del commit, incluido el workflow de la prueba posterior, que a su vez esperaba a Render (ver Resultados, prueba 6). Costo aceptado de On Commit: el deploy sale ~1 minuto después del merge y el CI en `main` termina ~3 minutos después, así que un fallo que solo aparezca en `main` ya estaría en producción; lo cubren la prueba posterior y el rollback. La alternativa, el deploy hook desde Actions, fija el orden de forma explícita; se adopta si la prueba posterior necesita encadenarse con un rollback automático.
 
 **Prueba posterior al deploy: orden y carrera.** Con auto-deploy, quien despliega es Render después de que termina el CI, no Actions, así que la prueba no puede asumir el orden. El diseño es este:
 
@@ -17,7 +17,7 @@
 3. Solo entonces llama a `/ready`, que sí consulta la base.
 4. Si el tiempo máximo se agota, la versión nueva no llegó a producción (por ejemplo, porque falló su health check) y el workflow falla.
 
-Sin el sondeo del paso 2, la prueba consultaría la versión anterior, que está sana, y daría un falso verde. Además hay un riesgo de bloqueo: si Render contara ese workflow entre los checks que espera, Render esperaría al workflow y el workflow esperaría a Render. No lo verifiqué; la prueba 6 de la fase 0 lo comprueba, y si resulta enredado ese es el motivo para pasar al deploy hook.
+Sin el sondeo del paso 2, la prueba consultaría la versión anterior, que está sana, y daría un falso verde. Además hay un bloqueo, medido en la prueba 6 con After CI Checks Pass: Render espera a todos los checks del commit, incluido este workflow, y el workflow espera a Render. Con On Commit no existe, porque Render no espera checks.
 
 Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, pero una fuente de terceros indica que exigen un plan de pago de Render; no lo verifiqué y el sondeo del paso 2 no los necesita.
 
@@ -32,10 +32,10 @@ Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, 
 **Consecuencias.**
 
 - Costo $0 de API y base de datos durante el desarrollo.
-- La primera petición tras 15 min de inactividad tarda cerca de 1 minuto. El cliente debe tolerarlo: timeouts mayores a 90 s o un aviso de "despertar" al abrir la app, reintentos con backoff y la cola de operaciones intacta.
-- **El health check de la API no debe consultar la base de datos.** Render lo llama cada pocos segundos; si tocara Neon, el cómputo nunca escalaría a cero y los 100 CU-hours se agotarían antes de fin de mes (con 0.25 CU serían unas 400 horas de las ~730 del mes; el tamaño mínimo de CU es un supuesto mío).
+- La primera petición tras 15 min de inactividad tardó 12.47 s en `/health` (una sola medición, tras ~3 h 45 min sin tráfico; con Neon dormido, `/ready` tardó 1.08 s; en caliente, 0.34 s). Render avisa de 50 s o más, así que el cliente debe tolerar hasta ~1 minuto. El cliente debe tolerarlo: timeouts mayores a 90 s o un aviso de "despertar" al abrir la app, reintentos con backoff y la cola de operaciones intacta.
+- **El health check de la API no debe consultar la base de datos.** Render lo llama cada ~5 s (visto en los logs); si tocara Neon, el cómputo nunca escalaría a cero y los 100 CU-hours se agotarían antes de fin de mes (con 0.25 CU serían unas 400 horas de las ~730 del mes; el tamaño mínimo es 0.25 CU, verificado en el panel de Neon).
 - **Ese diseño tiene un punto ciego:** un deploy con `DATABASE_URL` mala o con una migración rota responde 200 en `/health`, pasa el health check y sale a producción roto. La mitigación es la prueba posterior al deploy sobre `/ready` descrita arriba (poco frecuente, así que no mantiene despierta a Neon); si falla, GitHub te notifica y haces rollback.
-- **El orden de esa prueba no es obvio:** necesita el sondeo por `version` para no dar un falso verde, y vivir en un workflow aparte para no bloquearse con Render. El bloqueo es una hipótesis sin verificar.
+- **El orden de esa prueba no es obvio:** necesita el sondeo por `version` para no dar un falso verde, y Render no debe esperarla: con After CI Checks Pass se midió un bloqueo mutuo, y con On Commit desaparece.
 - **El rollback de código no revierte el esquema de la base.** Con datos reales, las migraciones deben ser compatibles hacia atrás (patrón expand/contract: añadir, migrar y solo después quitar). Es una dependencia del ADR de base de datos y ORM. Además, un rollback hecho desde el panel de Render desactiva el auto-deploy: hay que reactivarlo después.
 - **Restauración limitada:** Neon gratis conserva 6 horas de historial y 1 snapshot manual. Una migración mala que descubras al día siguiente no se restaura con instant restore: toma el snapshot (o un `pg_dump`) antes de cada migración riesgosa.
 - Una demo pública que tarda cerca de 1 minuto en responder da mala impresión a quien la revise: la pantalla inicial debe mostrar un estado de "despertando el servidor".
@@ -47,7 +47,7 @@ Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, 
 - Pasar la API a Render de pago (~$7 al mes): el día que compartas la URL de la demo en procesos de selección, o cuando midas más de 2 % de sincronizaciones fallidas en una semana atribuibles al arranque en frío (umbral inicial a ajustar). La medición sale del cliente: registra cada intento de sincronización con su resultado y motivo (timeout, 5xx, sin red) y lo envía en la siguiente sincronización exitosa, y la API lo agrega. Sin esa medición el umbral no es aplicable.
 - Pasar Neon a pago ($0.106 por CU-hora y $0.35 por GB-mes): al acercarte a 100 CU-hours o a 1 GB en un mes, o cuando entren usuarios reales con datos de entrenamiento y 6 horas de restauración sean insuficientes (Launch llega a 7 días, con el historial a $0.20 por GB-mes).
 - Mover la API a Fly.io: si la latencia medida desde Colombia es inaceptable.
-- Cambiar al deploy hook desde Actions: si la prueba 6 muestra que el workflow aparte bloquea a Render, o si necesitas encadenar la prueba posterior al deploy con un rollback automático.
+- Cambiar al deploy hook desde Actions: si On Commit despliega con frecuencia commits que el CI de `main` rechaza, o si necesitas encadenar la prueba posterior al deploy con un rollback automático.
 
 **Verificación (fase 0: esqueleto desplegado con rollback).**
 
@@ -68,6 +68,34 @@ Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, 
 | 24 horas con el health check activo; éxito: el cómputo de Neon consume menos de 3.3 CU-hours al día (100 entre 30) y los eventos de arranque y apagado del servicio en el panel de Render muestran si los health checks lo mantienen despierto (confirma que el panel registra el apagado) | Fase 5 | Operación con logs y métricas      |
 | Restauración de prueba en Neon: snapshot manual e instant restore a un punto de las últimas 6 horas; éxito: los datos vuelven al estado esperado, con el tiempo anotado                                                                                                                    | Fase 5 | Datos que restaurar                |
 
+## Resultados de la verificación
+
+Medidos el 2026-11-25 y el 2026-11-26 contra el servicio real (Render gratis, Ohio, y Neon gratis, us-east-2).
+
+| Prueba | Resultado | Medición |
+| ------ | --------- | -------- |
+| 6. Orden de Render, CI y prueba posterior | Superada con On Commit; con After CI Checks Pass hay bloqueo mutuo | Con After CI Checks Pass: el merge de `dfbf0a8` dejó la prueba posterior esperando 15 min y fallando, y Render no desplegó; en `b83eb1b` Render tampoco desplegó en ~10 min y el deploy automático apareció al terminar la prueba posterior, que solo pasó porque se hizo un deploy manual. Con On Commit (`de6b5d6`): merge 9:14, deploy iniciado 9:15, CI terminado ~9:17, prueba posterior en verde en 10 s. |
+| 1. Falta una variable requerida | Superada | Guardar la variable con "Save" no redesplegó; con Manual Deploy el contenedor salió con estado 1 (el log nombra `DATABASE_URL`, sin ningún valor) y `/health` siguió sirviendo la versión anterior. |
+| 2. `DATABASE_URL` bien formada pero errónea | Superada | El deploy quedó en vivo; `/health` 200 con la versión nueva y `/ready` 503 con `{"status":"unavailable"}`. Con "Save and deploy" Render sí redesplegó. |
+| 4. Rollback desde Events | Superada | Menos de 35 s del clic a la versión anterior (el deploy duró 11.3 s), sin caídas con sondeo cada 5 s; Auto-Deploy quedó en Off las dos veces. |
+| Prueba posterior lanzada a mano (`workflow_dispatch`) | Superada | Verde en 4 s con producción ya en la versión esperada. |
+| 3. Commit de arranque lento | Pendiente | |
+| Arranque en frío repetido | Pendiente | Una medición hecha (ver Consecuencias); falta repetirla a los 20 min y a la mañana siguiente. |
+
+**Hallazgos.**
+
+- "Save" en las variables de entorno no despliega; "Save and deploy" sí. La instancia viva conserva las variables anteriores hasta reiniciarse, así que dejar una variable borrada y sin desplegar es un riesgo.
+- El health check de Render no detecta una base de datos mal configurada; lo detecta `/ready` en la prueba posterior, que solo corre al terminar el CI en `main`. Tras cambiar variables en Render hay que lanzarla a mano.
+- El Pre-Deploy Command de Render es de pago; dónde correr las migraciones se decide en el ADR de base de datos.
+- Un rollback desde el panel deja el auto-deploy en Off sin más aviso que la pantalla de confirmación.
+
+**Runbook de rollback.**
+
+1. Render, Events: en una entrada "Deploy live for <SHA bueno>", pulsar Rollback y, en la pantalla de confirmación, "Rollback to this deploy" (sin ese último clic no pasa nada).
+2. Comprobar `/health` (campo `version`) y `/ready`.
+3. Settings, Auto-Deploy: volver a On Commit (el rollback lo deja en Off).
+4. Para volver adelante, un commit nuevo con el arreglo (o Manual Deploy, Deploy latest commit).
+
 ## Evidencia
 
 Consultado el 2026-11-19 y el 2026-11-20. Los precios y límites cambian en meses: esta sección se actualiza (con nueva fecha) sin tocar la decisión.
@@ -82,7 +110,7 @@ Consultado el 2026-11-19 y el 2026-11-20. Los precios y límites cambian en mese
 | Render, deploy hooks          | Alternativa: desactivar el auto-deploy y disparar el despliegue desde GitHub Actions con una URL secreta                                                                                                                            | [Render, deploy hooks](https://render.com/docs/deploy-hooks)                                                                                                                                                                                                        |
 | Render, versión desplegada    | La variable `RENDER_GIT_COMMIT` contiene el SHA del commit del servicio o deploy y está disponible en runtime                                                                                                                       | [Render, variables de entorno](https://render.com/docs/environment-variables)                                                                                                                                                                                       |
 | Render, webhooks              | Existe el evento `deploy_ended` con un campo `status` (succeeded, failed o canceled). Una fuente de terceros dice que crear webhooks exige ser admin y plan Professional o superior; no está verificado en la documentación oficial | [Render, webhooks](https://render.com/docs/webhooks), [Render, changelog](https://render.com/changelog/webhooks-for-completed-actions-now-include-the-actions-result), [Spike (terceros)](https://docs.spike.sh/integrations-guideline/integrate-spike-with-render) |
-| Render, rollback              | Se hace desde la página Events del servicio con el botón Rollback; hecho desde el panel desactiva el auto-deploy del servicio. Las páginas que revisé no mencionan restricciones para el plan gratuito, pero tampoco lo confirman   | [Render, rollbacks](https://render.com/docs/rollbacks)                                                                                                                                                                                                              |
+| Render, rollback              | Se hace desde la página Events del servicio con el botón Rollback; hecho desde el panel desactiva el auto-deploy del servicio. Las páginas que revisé no mencionan restricciones para el plan gratuito, pero tampoco lo confirman; se confirmó el 2026-11-26: funciona en el plan gratuito y la pantalla de confirmación avisa de que desactiva el auto-deploy   | [Render, rollbacks](https://render.com/docs/rollbacks)                                                                                                                                                                                                              |
 | Neon, plan gratuito           | Sin expiración y sin tarjeta; 1 GB de almacenamiento y 100 CU-hours de cómputo al mes por proyecto                                                                                                                                  | [Neon](https://neon.com/faqs/free-plan-limits-and-quotas)                                                                                                                                                                                                           |
 | Neon, escala a cero           | En el plan gratuito se suspende a los 5 min de inactividad y no se puede desactivar; despierta en unos cientos de milisegundos                                                                                                      | [Neon, precios](https://neon.com/pricing), [Neon, guía](https://neon.com/guides/neon-vs-supabase-free-plan)                                                                                                                                                         |
 | Neon, al agotar un límite     | El cómputo se suspende hasta el siguiente mes. Esa página aún muestra 0.5 GB, una cifra antigua: confirma el límite actual en tu cuenta                                                                                             | [Neon](https://neon.com/2024-plan-updates)                                                                                                                                                                                                                          |

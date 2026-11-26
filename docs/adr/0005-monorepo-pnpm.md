@@ -20,7 +20,7 @@
 - Instalaciones rápidas y error inmediato si importas algo que no declaraste.
 - Un cambio en `contracts` se ve en `api` y `web` dentro del mismo PR.
 - pnpm es menos común que npm en algunos equipos.
-- La API se despliega con Docker (ADR-0004): el contexto de build debe ser la raíz del repo para poder copiar `contracts` junto a `api`.
+- La API se despliega con Docker (ADR-0004): el contexto de build debe ser la raíz del repo para poder copiar `contracts` junto a `api`. Dentro del build (ADR-0006), `contracts` se compila a `dist` y `pnpm deploy --prod --legacy` lo incluye en la imagen final junto a la API; por eso `contracts` declara `files: ["dist"]` y una condición `default` hacia `dist` en su `exports` (en desarrollo y en los tests se resuelve a `src` con la condición `development`).
 
 **Qué me haría cambiar de opinión.**
 

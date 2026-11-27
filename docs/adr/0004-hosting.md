@@ -1,7 +1,7 @@
 # ADR-0004: Hosting — Render (API) + Neon (Postgres), ambos en plan gratuito
 
-- Estado: propuesto (la verificación de la fase 0 está hecha salvo la prueba 3 y el arranque en frío repetido; ver "Resultados de la verificación"; pasa a aceptado al cerrarlas)
-- Fecha: 2026-11-20 (reemplaza la propuesta del 2026-11-18, que elegía Render de pago); enmendado el 2026-11-26 con los resultados medidos
+- Estado: aceptado (verificación de la fase 0 completa; ver "Resultados de la verificación"; el coste $0 tras una semana queda como verificación diferida)
+- Fecha: 2026-11-20 (reemplaza la propuesta del 2026-11-18, que elegía Render de pago); enmendado y aceptado el 2026-11-27 con los resultados medidos
 - Evidencia: sección "Evidencia" al final de este archivo (precios y límites con fecha; se actualiza sin tocar la decisión)
 
 **Decisión: la API corre en un servicio web gratuito de Render, empaquetada en Docker para mantener la portabilidad, y Postgres en el plan gratuito de Neon, ambos en Ohio (us-east-2 en Neon). El auto-deploy de Render se configura en "On Commit" (con "After CI Checks Pass" se midió un bloqueo con la prueba posterior); la compuerta es el PR con `verify` obligatorio y una prueba posterior verifica producción. Se pasa a un plan de pago cuando se cumpla uno de los umbrales de "qué me haría cambiar de opinión".**
@@ -32,7 +32,7 @@ Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, 
 **Consecuencias.**
 
 - Costo $0 de API y base de datos durante el desarrollo.
-- La primera petición tras 15 min de inactividad tardó 12.47 s en `/health` (una sola medición, tras ~3 h 45 min sin tráfico; con Neon dormido, `/ready` tardó 1.08 s; en caliente, 0.34 s). Render avisa de 50 s o más, así que el cliente debe tolerar hasta ~1 minuto. El cliente debe tolerarlo: timeouts mayores a 90 s o un aviso de "despertar" al abrir la app, reintentos con backoff y la cola de operaciones intacta.
+- La primera petición con el servicio dormido tardó ~12.5 s en `/health` (tres mediciones: 12.47 s tras ~3 h 45 min sin tráfico, 12.62 s tras ~1 h 40 min y 12.62 s tras una noche; con Neon dormido, `/ready` tardó entre 0.87 y 1.08 s; en caliente, entre 0.27 y 0.34 s). Render avisa de 50 s o más, así que el cliente debe tolerar hasta ~1 minuto. El cliente debe tolerarlo: timeouts mayores a 90 s o un aviso de "despertar" al abrir la app, reintentos con backoff y la cola de operaciones intacta.
 - **El health check de la API no debe consultar la base de datos.** Render lo llama cada ~5 s (visto en los logs); si tocara Neon, el cómputo nunca escalaría a cero y los 100 CU-hours se agotarían antes de fin de mes (con 0.25 CU serían unas 400 horas de las ~730 del mes; el tamaño mínimo es 0.25 CU, verificado en el panel de Neon).
 - **Ese diseño tiene un punto ciego:** un deploy con `DATABASE_URL` mala o con una migración rota responde 200 en `/health`, pasa el health check y sale a producción roto. La mitigación es la prueba posterior al deploy sobre `/ready` descrita arriba (poco frecuente, así que no mantiene despierta a Neon); si falla, GitHub te notifica y haces rollback.
 - **El orden de esa prueba no es obvio:** necesita el sondeo por `version` para no dar un falso verde, y Render no debe esperarla: con After CI Checks Pass se midió un bloqueo mutuo, y con On Commit desaparece.
@@ -67,10 +67,11 @@ Los webhooks de Render (`deploy_ended`) podrían disparar la prueba sin sondeo, 
 | Arranque en frío tras 20 minutos sin tráfico; éxito: tiempo anotado y el cliente sincroniza sin perder operaciones                                                                                                                                                                         | Fase 5 | Cliente con cola de sincronización |
 | 24 horas con el health check activo; éxito: el cómputo de Neon consume menos de 3.3 CU-hours al día (100 entre 30) y los eventos de arranque y apagado del servicio en el panel de Render muestran si los health checks lo mantienen despierto (confirma que el panel registra el apagado) | Fase 5 | Operación con logs y métricas      |
 | Restauración de prueba en Neon: snapshot manual e instant restore a un punto de las últimas 6 horas; éxito: los datos vuelven al estado esperado, con el tiempo anotado                                                                                                                    | Fase 5 | Datos que restaurar                |
+| Coste $0 tras una semana en producción (criterio C11 de la spec 001); éxito: sin cargos en Render ni en Neon y consumo de Neon muy por debajo de 100 CU-hours | Fase 0, a una semana del despliegue (~2 de diciembre) | El paso del tiempo |
 
 ## Resultados de la verificación
 
-Medidos el 2026-11-25 y el 2026-11-26 contra el servicio real (Render gratis, Ohio, y Neon gratis, us-east-2).
+Medidos entre el 2026-11-25 y el 2026-11-27 contra el servicio real (Render gratis, Ohio, y Neon gratis, us-east-2).
 
 | Prueba | Resultado | Medición |
 | ------ | --------- | -------- |
@@ -79,15 +80,17 @@ Medidos el 2026-11-25 y el 2026-11-26 contra el servicio real (Render gratis, Oh
 | 2. `DATABASE_URL` bien formada pero errónea | Superada | El deploy quedó en vivo; `/health` 200 con la versión nueva y `/ready` 503 con `{"status":"unavailable"}`. Con "Save and deploy" Render sí redesplegó. |
 | 4. Rollback desde Events | Superada | Menos de 35 s del clic a la versión anterior (el deploy duró 11.3 s), sin caídas con sondeo cada 5 s; Auto-Deploy quedó en Off las dos veces. |
 | Prueba posterior lanzada a mano (`workflow_dispatch`) | Superada | Verde en 4 s con producción ya en la versión esperada. |
-| 3. Commit de arranque lento | Pendiente | |
-| Arranque en frío repetido | Pendiente | Una medición hecha (ver Consecuencias); falta repetirla a los 20 min y a la mañana siguiente. |
+| 3. Arranque lento | Superada | Con un Docker Command que esperaba 90 s antes de arrancar, la versión anterior sirvió sin interrupciones (sondeo cada 5 s, sin errores ni respuestas vacías), Render aceptó el deploy, la versión nueva llegó a producción ~2.5 min después del clic y la prueba posterior esperó hasta ver la versión nueva y terminó en verde después del cambio. |
+| Arranque en frío repetido | Superada | Tres mediciones consistentes (~12.5 s en `/health`; ver Consecuencias), la última tras una noche sin tráfico. |
 
 **Hallazgos.**
 
 - "Save" en las variables de entorno no despliega; "Save and deploy" sí. La instancia viva conserva las variables anteriores hasta reiniciarse, así que dejar una variable borrada y sin desplegar es un riesgo.
 - El health check de Render no detecta una base de datos mal configurada; lo detecta `/ready` en la prueba posterior, que solo corre al terminar el CI en `main`. Tras cambiar variables en Render hay que lanzarla a mano.
 - El Pre-Deploy Command de Render es de pago; dónde correr las migraciones se decide en el ADR de base de datos.
-- Un rollback desde el panel deja el auto-deploy en Off sin más aviso que la pantalla de confirmación.
+- Un rollback desde el panel, y también "Deploy a specific commit", dejan el auto-deploy en Off sin más aviso que la pantalla de confirmación.
+- El Docker Command de Render se ejecuta sin shell: `&&`, `exec` y `sh -c "..."` no funcionan (con `sleep 90 && exec node ...`, `sleep` recibió `--enable-source-maps` como argumento). Una espera se escribe sin espacios ni comillas, por ejemplo ``node --enable-source-maps -e setTimeout(()=>import(`./dist/server.js`),90000)``.
+- Consumo de Neon medido el 2026-11-26 en la rama de producción: 0.29 CU-horas de las 100 gratuitas y 32 MB de almacenamiento, con cómputo `0.25 ↔ 2 CU`. Cada rama tiene su propio cómputo; se creó una rama `dev`, sin caducidad, para el desarrollo y las pruebas locales.
 
 **Runbook de rollback.**
 

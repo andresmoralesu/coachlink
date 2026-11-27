@@ -99,10 +99,7 @@
         "workout_logs_client_id_device_op_id_unique": {
           "name": "workout_logs_client_id_device_op_id_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "client_id",
-            "device_op_id"
-          ]
+          "columns": ["client_id", "device_op_id"]
         }
       },
       "policies": {},

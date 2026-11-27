@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1795814023212,
+      "tag": "0000_workout_logs",
+      "breakpoints": true
+    }
+  ]
+}
